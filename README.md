@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # ⚡ LINK PULSE — URL Shortener & Analytics Platform
 
 > Built by **Team Krypton** for **Innovista Round 2**
@@ -175,3 +176,7 @@ Because Link Pulse uses Express.js with SQLite persistence, it is designed for s
 - **Team Name**: Team Krypton
 - **Project**: Link Pulse
 - **License**: MIT
+=======
+# Team-krypton_linkpulse
+Link Pulse — A modern URL shortener and analytics platform featuring custom short links, QR code generation, click tracking, link management, expiration controls, and real-time performance insights. Built with HTML, CSS, JavaScript, Node.js, Express.js, SQLite, and Chart.js for Innovista Hackathon by Team Krypton.
+>>>>>>> 7dd4fdd5d9e5c1b9b613e24c5b36e2f8e1f67598

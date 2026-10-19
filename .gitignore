@@ -1,11 +1,53 @@
+
+# Dependencies
 node_modules/
+
+# Environment variables
 .env
-*.db
-*.db-*
-logs/
-*.log
-dist/
-.DS_Store
-Thumbs.db
 .env.*
 !.env.example
+
+# SQLite database files
+*.db
+*.db-*
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/Release/
+.next/
+out/
+.nuxt/
+.output/
+coverage/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Runtime and diagnostic files
+pids/
+*.pid
+*.seed
+*.pid.lock
+report.*.*.*.*.json
+
+# Package manager and tool caches
+.npm/
+.cache/
+.parcel-cache/
+.pnpm-store/
+web_modules/
+jspm_packages/
+
+# Editor and language caches
+.vscode-test/
+*.tsbuildinfo
+.eslintcache
+.stylelintcache

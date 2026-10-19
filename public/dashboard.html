@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Link Pulse</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+
+  <!-- Auth Overlay -->
+  <div class="auth-overlay" id="authOverlay">
+    <div class="auth-card">
+      <div class="logo">
+        <div class="logo-icon">⚡</div>
+        <span>Link<strong>Pulse</strong></span>
+      </div>
+      <h2>Welcome Back</h2>
+      <p style="color:var(--text-secondary)">Enter your admin password to access the dashboard.</p>
+      <div class="auth-error" id="authError"></div>
+      <form id="authForm">
+        <div class="form-group">
+          <label for="authPassword">Admin Password</label>
+          <input type="password" class="input" id="authPassword" placeholder="Enter password…" required autocomplete="off">
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg" style="width:100%">
+          <span id="authBtnText">Sign In</span>
+          <div class="spinner" id="authSpinner" style="display:none"></div>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Dashboard App -->
+  <div id="app" class="dashboard-layout" style="display:none">
+    <!-- Sidebar Toggle (mobile) -->
+    <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">☰</button>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-icon">⚡</div>
+        <span>Link<strong>Pulse</strong></span>
+      </div>
+      <nav class="sidebar-nav">
+        <button class="sidebar-nav-item active" data-view="overview">
+          <span class="nav-icon">📊</span> Dashboard
+        </button>
+        <button class="sidebar-nav-item" data-view="links">
+          <span class="nav-icon">🔗</span> Links
+        </button>
+        <button class="sidebar-nav-item" data-view="create">
+          <span class="nav-icon">➕</span> Create Link
+        </button>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="btn btn-ghost btn-sm" id="logoutBtn" style="width:100%">🚪 Logout</button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="dashboard-main">
+
+      <!-- ═══ Overview View ═══ -->
+      <section class="view-section active" id="overviewView">
+        <div class="dashboard-header">
+          <h1>Dashboard</h1>
+          <div class="dashboard-header-actions">
+            <button class="btn btn-primary" data-nav="create">➕ Create Link</button>
+          </div>
+        </div>
+
+        <div class="stat-cards">
+          <div class="stat-card">
+            <div class="stat-card-label">Total Links</div>
+            <div class="stat-card-value" id="dashTotalLinks">—</div>
+            <div class="stat-card-icon">🔗</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-label">Total Clicks</div>
+            <div class="stat-card-value" id="dashTotalClicks">—</div>
+            <div class="stat-card-icon">👆</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-label">Active Links</div>
+            <div class="stat-card-value" id="dashActiveLinks">—</div>
+            <div class="stat-card-icon">✅</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-label">Suspicious</div>
+            <div class="stat-card-value" id="dashSuspicious">—</div>
+            <div class="stat-card-icon">⚠️</div>
+          </div>
+        </div>
+
+        <div class="chart-container">
+          <h3>Click Trends (Last 30 Days)</h3>
+          <div class="chart-wrapper">
+            <canvas id="clickTrendChart"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-container">
+          <h3>Top Performing Links</h3>
+          <div class="top-links" id="topLinksList">
+            <div class="loading-state"><div class="spinner"></div><span>Loading…</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══ Links View ═══ -->
+      <section class="view-section" id="linksView">
+        <div class="dashboard-header">
+          <h1>Link Manager</h1>
+          <div class="dashboard-header-actions">
+            <button class="btn btn-primary" data-nav="create">➕ Create Link</button>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <input type="text" class="input" id="linkSearch" placeholder="Search links…" autocomplete="off">
+          <select class="select" id="statusFilter">
+            <option value="">All Status</option>
+            <option value="active">Active</option>
+            <option value="expired">Expired</option>
+            <option value="disabled">Disabled</option>
+            <option value="suspicious">Suspicious</option>
+          </select>
+          <select class="select" id="tagFilter">
+            <option value="">All Tags</option>
+          </select>
+        </div>
+
+        <div class="links-list" id="linksList">
+          <div class="loading-state"><div class="spinner"></div><span>Loading links…</span></div>
+        </div>
+      </section>
+
+      <!-- ═══ Create View ═══ -->
+      <section class="view-section" id="createView">
+        <div class="dashboard-header">
+          <h1>Create New Link</h1>
+        </div>
+
+        <div class="create-form">
+          <form id="createLinkForm">
+            <div class="form-group">
+              <label for="createUrl">Destination URL *</label>
+              <input type="url" class="input" id="createUrl" placeholder="https://example.com/very-long-url" required>
+            </div>
+            <div class="form-group">
+              <label for="createAlias">Custom Alias</label>
+              <input type="text" class="input" id="createAlias" placeholder="my-custom-link" minlength="3" maxlength="50">
+              <div class="form-hint">3-50 chars, letters, numbers, hyphens, underscores</div>
+            </div>
+            <div class="form-group">
+              <label for="createTitle">Title</label>
+              <input type="text" class="input" id="createTitle" placeholder="My Campaign Link">
+            </div>
+            <div class="form-group">
+              <label for="createTag">Campaign Tag</label>
+              <input type="text" class="input" id="createTag" placeholder="summer-2026">
+            </div>
+            <div class="form-group">
+              <div class="password-toggle">
+                <input type="checkbox" id="enablePassword"> <label for="enablePassword" style="margin:0;cursor:pointer">Enable Password Protection</label>
+              </div>
+              <input type="password" class="input" id="createPassword" placeholder="Enter password…" style="display:none" autocomplete="new-password">
+            </div>
+            <div class="form-group">
+              <label for="createClickLimit">Click Limit</label>
+              <input type="number" class="input" id="createClickLimit" placeholder="Unlimited" min="1">
+            </div>
+            <div class="form-group">
+              <label for="createExpiry">Expiration Date</label>
+              <input type="datetime-local" class="input" id="createExpiry">
+            </div>
+            <button type="submit" class="btn btn-primary btn-lg" style="width:100%" id="createBtn">
+              <span id="createBtnText">Create Short Link</span>
+              <div class="spinner" id="createSpinner" style="display:none"></div>
+            </button>
+          </form>
+
+          <div class="create-result" id="createResult">
+            <h3 style="margin-bottom:.75rem;color:var(--success)">✅ Link Created!</h3>
+            <div class="result-url-box" style="margin-bottom:.75rem">
+              <span class="result-url" id="createResultUrl"></span>
+              <button class="btn btn-sm btn-secondary" id="createCopyBtn">📋 Copy</button>
+            </div>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+              <button class="btn btn-sm btn-outline" id="createQrBtn">📱 QR Code</button>
+              <button class="btn btn-sm btn-ghost" id="createAnotherBtn">Create Another</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Edit Modal -->
+  <div class="modal-overlay" id="editModal">
+    <div class="modal">
+      <button class="modal-close" data-close-modal>&times;</button>
+      <h2>Edit Link</h2>
+      <form id="editForm">
+        <input type="hidden" id="editId">
+        <div class="form-group">
+          <label for="editTitle">Title</label>
+          <input type="text" class="input" id="editTitle">
+        </div>
+        <div class="form-group">
+          <label for="editTag">Campaign Tag</label>
+          <input type="text" class="input" id="editTag">
+        </div>
+        <div class="form-group">
+          <label for="editActive">Status</label>
+          <select class="select" id="editActive">
+            <option value="1">Active</option>
+            <option value="0">Disabled</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="editClickLimit">Click Limit</label>
+          <input type="number" class="input" id="editClickLimit" placeholder="Unlimited" min="1">
+        </div>
+        <div class="form-group">
+          <label for="editExpiry">Expiration</label>
+          <input type="datetime-local" class="input" id="editExpiry">
+        </div>
+        <div class="form-group">
+          <label for="editPassword">New Password (leave empty to keep)</label>
+          <input type="password" class="input" id="editPassword" placeholder="••••••" autocomplete="new-password">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%">Save Changes</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- QR Modal -->
+  <div class="modal-overlay" id="dashQrModal">
+    <div class="modal">
+      <button class="modal-close" data-close-modal>&times;</button>
+      <h2>QR Code</h2>
+      <div style="text-align:center">
+        <img id="dashQrImage" src="" alt="QR Code" style="max-width:280px;margin:1rem auto;border-radius:8px;background:#fff;padding:1rem">
+        <p style="margin-bottom:1rem;font-size:.875rem;color:var(--text-secondary)" id="dashQrUrl"></p>
+        <button class="btn btn-primary" id="dashDownloadQr">⬇ Download QR</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Link Detail Modal -->
+  <div class="modal-overlay" id="detailModal">
+    <div class="modal" style="max-width:600px">
+      <button class="modal-close" data-close-modal>&times;</button>
+      <h2 id="detailTitle">Link Analytics</h2>
+      <div class="detail-stats" id="detailStats"></div>
+      <div class="detail-chart">
+        <canvas id="detailChart"></canvas>
+      </div>
+      <h3 style="margin:1rem 0 .75rem;font-size:.9rem">Recent Clicks</h3>
+      <div class="click-list" id="detailClickList"></div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/dashboard.js"></script>
+</body>
+</html>

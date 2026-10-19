@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Link Pulse — Smart URL Shortener &amp; Analytics</title>
+  <meta name="description" content="Shorten URLs, track clicks, and optimize your links with Link Pulse. Real-time analytics, QR codes, password protection, and more.">
+  <meta property="og:title" content="Link Pulse — Smart URL Shortener &amp; Analytics">
+  <meta property="og:description" content="Shorten, track, and optimize your links with real-time analytics.">
+  <meta property="og:type" content="website">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav class="navbar" id="navbar" aria-label="Main navigation">
+    <div class="container">
+      <a href="/" class="logo" aria-label="Link Pulse home">
+        <div class="logo-icon">⚡</div>
+        <span>Link<strong>Pulse</strong></span>
+      </a>
+      <div class="nav-links" id="navLinks">
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How It Works</a>
+        <a href="/dashboard" class="btn btn-sm btn-primary">Dashboard</a>
+      </div>
+      <button class="hamburger" id="hamburger" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Mobile Overlay -->
+  <div class="mobile-overlay" id="mobileMenu">
+    <a href="#features" data-close-menu>Features</a>
+    <a href="#how-it-works" data-close-menu>How It Works</a>
+    <a href="/dashboard" data-close-menu>Dashboard</a>
+  </div>
+
+  <main>
+    <!-- Hero Section -->
+    <section class="hero" id="hero">
+      <div class="container">
+        <div class="hero-content">
+          <div class="hero-badge">🚀 Open-source URL shortener by Team Krypton</div>
+          <h1>Shorten. Track.<br><span class="highlight">Optimize.</span></h1>
+          <p>Transform long URLs into powerful short links. Track every click with real-time analytics, generate QR codes, set expirations, and protect with passwords.</p>
+
+          <div class="shortener-card">
+            <form class="shortener-form" id="shortenerForm" aria-label="Shorten a URL">
+              <input
+                type="url"
+                class="input"
+                id="urlInput"
+                placeholder="Paste your long URL here…"
+                required
+                autocomplete="off"
+                aria-label="URL to shorten"
+              >
+              <button type="submit" class="btn btn-primary" id="shortenBtn">
+                <span id="shortenBtnText">Shorten</span>
+                <div class="spinner" id="shortenSpinner" style="display:none"></div>
+              </button>
+            </form>
+
+            <div class="shortener-result" id="shortenerResult">
+              <div class="result-url-box">
+                <span class="result-url" id="resultUrl"></span>
+                <button class="btn btn-sm btn-secondary" id="copyBtn" aria-label="Copy short URL">📋 Copy</button>
+              </div>
+              <div class="result-actions">
+                <button class="btn btn-sm btn-outline" id="qrBtn">📱 QR Code</button>
+                <button class="btn btn-sm btn-outline" id="shareBtn">🔗 Share</button>
+                <a class="btn btn-sm btn-ghost" id="openLink" href="#" target="_blank" rel="noopener">Open ↗</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="section" id="features">
+      <div class="container">
+        <div class="text-center" style="margin-bottom:3rem">
+          <h2 class="animate-in">Everything You Need to <span class="text-gradient">Manage Links</span></h2>
+          <p class="animate-in" style="max-width:560px;margin:.75rem auto 0">Powerful features to shorten, track, and optimize every link you share.</p>
+        </div>
+        <div class="features-grid">
+          <div class="feature-card card-glow animate-in">
+            <div class="feature-icon">⚡</div>
+            <h3>Lightning Fast</h3>
+            <p>Create short links in under a second. No signup required for basic shortening.</p>
+          </div>
+          <div class="feature-card card-glow animate-in">
+            <div class="feature-icon" style="background:rgba(0,210,211,.1)">📊</div>
+            <h3>Real-Time Analytics</h3>
+            <p>Track every click with detailed analytics. See trends, referrers, and devices.</p>
+          </div>
+          <div class="feature-card card-glow animate-in">
+            <div class="feature-icon" style="background:rgba(253,121,168,.1)">🔒</div>
+            <h3>Password Protection</h3>
+            <p>Secure sensitive links with passwords. Only authorized users can access.</p>
+          </div>
+          <div class="feature-card card-glow animate-in">
+            <div class="feature-icon" style="background:rgba(0,184,148,.1)">📱</div>
+            <h3>QR Codes</h3>
+            <p>Generate downloadable QR codes for every link. Perfect for print and mobile.</p>
+          </div>
+          <div class="feature-card card-glow animate-in">
+            <div class="feature-icon" style="background:rgba(253,203,110,.1)">⏰</div>
+            <h3>Link Expiration</h3>
+            <p>Set automatic expiry dates and click limits. Links self-destruct when done.</p>
+          </div>
+          <div class="feature-card card-glow animate-in">
+            <div class="feature-icon" style="background:rgba(108,92,231,.1)">🏷️</div>
+            <h3>Campaign Tags</h3>
+            <p>Organize links by campaigns. Filter and analyze performance by tag.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="section" id="how-it-works" style="background:var(--bg-card);border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+      <div class="container">
+        <div class="text-center">
+          <h2 class="animate-in">How It <span class="text-gradient">Works</span></h2>
+          <p class="animate-in" style="max-width:480px;margin:.75rem auto 0">Three simple steps to start managing your links like a pro.</p>
+        </div>
+        <div class="steps">
+          <div class="step animate-in">
+            <div class="step-number">1</div>
+            <h3>Paste Your URL</h3>
+            <p>Drop in any long URL and we'll instantly create a short, memorable link.</p>
+          </div>
+          <div class="step animate-in">
+            <div class="step-number">2</div>
+            <h3>Customize</h3>
+            <p>Add a custom alias, password, expiration, or campaign tag to your link.</p>
+          </div>
+          <div class="step animate-in">
+            <div class="step-number">3</div>
+            <h3>Share &amp; Track</h3>
+            <p>Share your link anywhere and watch real-time analytics roll in.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stats -->
+    <section class="section stats-section" id="stats">
+      <div class="container">
+        <div class="stats-grid">
+          <div class="stat-item animate-in">
+            <div class="stat-number" data-count="0" id="statLinks">0</div>
+            <div class="stat-label">Links Created</div>
+          </div>
+          <div class="stat-item animate-in">
+            <div class="stat-number" data-count="0" id="statClicks">0</div>
+            <div class="stat-label">Clicks Tracked</div>
+          </div>
+          <div class="stat-item animate-in">
+            <div class="stat-number" data-count="100" id="statUptime">99.9%</div>
+            <div class="stat-label">Uptime</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <p>© 2026 <strong>Link Pulse</strong> by Team Krypton. Built for Innovista.</p>
+      <div class="footer-links">
+        <a href="/dashboard">Dashboard</a>
+        <a href="https://github.com" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer" aria-live="polite"></div>
+
+  <!-- QR Modal -->
+  <div class="modal-overlay" id="qrModal">
+    <div class="modal">
+      <button class="modal-close" data-close-modal aria-label="Close">&times;</button>
+      <h2>QR Code</h2>
+      <div style="text-align:center">
+        <img id="qrImage" src="" alt="QR Code" style="max-width:280px;margin:1rem auto;border-radius:8px;background:#fff;padding:1rem">
+        <p style="margin-bottom:1rem;font-size:.9rem" id="qrUrl"></p>
+        <button class="btn btn-primary" id="downloadQr">⬇ Download QR</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

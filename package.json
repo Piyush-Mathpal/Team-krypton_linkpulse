@@ -1,0 +1,27 @@
+{
+  "name": "link-pulse",
+  "version": "1.0.0",
+  "description": "Link Pulse — Smart URL Shortener & Analytics Platform by Team Krypton",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": ["url-shortener", "analytics", "link-management"],
+  "author": "Team Krypton",
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.1",
+    "express-rate-limit": "^7.4.1",
+    "helmet": "^8.0.0",
+    "morgan": "^1.10.0",
+    "nanoid": "^3.3.8",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7"
+  }
+}

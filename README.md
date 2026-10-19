@@ -84,9 +84,8 @@
    ```
    Edit `.env` to supply your Neon PostgreSQL connection string:
    ```ini
-   PORT=3000
-   BASE_URL=http://localhost:3000
-   ADMIN_PASSWORD=admin123
+   BASE_URL=https://team-krypton-linkpulse.onrender.com
+   ADMIN_PASSWORD=admin@123
    SESSION_SECRET=super_secret_session_salt
    DATABASE_URL=postgresql://username:password@ep-sample.us-east-2.aws.neon.tech/neondb?sslmode=require
    ```
@@ -108,8 +107,8 @@
      ```
 
 6. **Open in Browser:**
-   - Landing Page: [http://localhost:3000](http://localhost:3000)
-   - Admin Dashboard: [http://localhost:3000/dashboard](http://localhost:3000/dashboard) *(Default password: `admin123`)*
+   - Landing Page: [https://team-krypton-linkpulse.onrender.com/](https://team-krypton-linkpulse.onrender.com/)
+   - Admin Dashboard: [https://team-krypton-linkpulse.onrender.com/dashboard](https://team-krypton-linkpulse.onrender.com/dashboard) *(Default password: `admin@123`)*
 
 ---
 

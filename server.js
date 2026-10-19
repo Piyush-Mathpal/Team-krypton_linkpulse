@@ -11,9 +11,19 @@ const QRCode = require('qrcode');
 const path = require('path');
 
 const {
-  createLink, getLinkByCode, getLinkById, getAllLinks,
-  updateLink, deleteLink, recordClick, incrementClickCount,
-  getClicksForLink, getAnalyticsSummary, getClicksByDate, reportSuspicious,
+  initDB,
+  createLink,
+  getLinkByCode,
+  getLinkById,
+  getAllLinks,
+  updateLink,
+  deleteLink,
+  recordClick,
+  incrementClickCount,
+  getClicksForLink,
+  getAnalyticsSummary,
+  getClicksByDate,
+  reportSuspicious,
 } = require('./db');
 
 const app = express();
@@ -102,9 +112,9 @@ const api = express.Router();
 api.use(apiLimiter);
 
 // Public endpoint — summary (limited info for landing page)
-api.get('/analytics/summary-public', (req, res) => {
+api.get('/analytics/summary-public', async (req, res) => {
   try {
-    const summary = getAnalyticsSummary();
+    const summary = await getAnalyticsSummary();
     res.json({ totalLinks: summary.totalLinks, totalClicks: summary.totalClicks });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch summary.' });
@@ -112,9 +122,9 @@ api.get('/analytics/summary-public', (req, res) => {
 });
 
 // Password verification (public)
-api.post('/links/:code/verify-password', (req, res) => {
+api.post('/links/:code/verify-password', async (req, res) => {
   try {
-    const link = getLinkByCode(req.params.code);
+    const link = await getLinkByCode(req.params.code);
     if (!link) return res.status(404).json({ error: 'Link not found.' });
     if (!link.password_hash) return res.json({ redirect_url: link.original_url });
 
@@ -125,12 +135,12 @@ api.post('/links/:code/verify-password', (req, res) => {
     if (!valid) return res.status(403).json({ error: 'Incorrect password.' });
 
     // Record click and redirect
-    recordClick(link.id, {
+    await recordClick(link.id, {
       referrer: req.headers.referer || req.headers.referrer,
       user_agent: req.headers['user-agent'],
       ip: req.ip,
     });
-    incrementClickCount(link.id);
+    await incrementClickCount(link.id);
 
     res.json({ redirect_url: link.original_url });
   } catch (err) {
@@ -139,7 +149,7 @@ api.post('/links/:code/verify-password', (req, res) => {
 });
 
 // Create link (public - rate-limited)
-api.post('/links', (req, res) => {
+api.post('/links', async (req, res) => {
   try {
     let { url, custom_alias, title, campaign_tag, password, click_limit, expires_at } = req.body;
 
@@ -151,7 +161,7 @@ api.post('/links', (req, res) => {
       if (!isValidAlias(custom_alias)) {
         return res.status(400).json({ error: 'Alias must be 3-50 characters, alphanumeric, hyphens, or underscores.' });
       }
-      const existing = getLinkByCode(custom_alias);
+      const existing = await getLinkByCode(custom_alias);
       if (existing) return res.status(409).json({ error: 'Alias already taken.' });
       short_code = custom_alias;
     } else {
@@ -163,7 +173,7 @@ api.post('/links', (req, res) => {
       password_hash = bcrypt.hashSync(password, 10);
     }
 
-    const link = createLink({
+    const link = await createLink({
       original_url: url,
       short_code,
       custom_alias: custom_alias || null,
@@ -179,7 +189,7 @@ api.post('/links', (req, res) => {
       short_url: `${BASE_URL}/${link.custom_alias || link.short_code}`,
     });
   } catch (err) {
-    if (err.message && err.message.includes('UNIQUE')) {
+    if (err.code === '23505' || (err.message && (err.message.includes('UNIQUE') || err.message.includes('duplicate key')))) {
       return res.status(409).json({ error: 'Short code collision. Please try again.' });
     }
     res.status(500).json({ error: 'Failed to create link.' });
@@ -187,9 +197,9 @@ api.post('/links', (req, res) => {
 });
 
 // QR Code (public)
-api.get('/links/:id/qr', (req, res) => {
+api.get('/links/:id/qr', async (req, res) => {
   try {
-    const link = getLinkById(parseInt(req.params.id));
+    const link = await getLinkById(parseInt(req.params.id));
     if (!link) return res.status(404).json({ error: 'Link not found.' });
 
     const shortUrl = `${BASE_URL}/${link.custom_alias || link.short_code}`;
@@ -207,9 +217,9 @@ api.get('/links/:id/qr', (req, res) => {
 });
 
 // Report suspicious (public)
-api.post('/links/:id/report', (req, res) => {
+api.post('/links/:id/report', async (req, res) => {
   try {
-    const link = reportSuspicious(parseInt(req.params.id));
+    const link = await reportSuspicious(parseInt(req.params.id));
     if (!link) return res.status(404).json({ error: 'Link not found.' });
     res.json({ message: 'Link reported as suspicious.', link });
   } catch (err) {
@@ -221,10 +231,10 @@ api.post('/links/:id/report', (req, res) => {
 api.use(requireAuth);
 
 // List links
-api.get('/links', (req, res) => {
+api.get('/links', async (req, res) => {
   try {
     const { search, status, tag } = req.query;
-    const links = getAllLinks(search, status, tag);
+    const links = await getAllLinks(search, status, tag);
     const enriched = links.map(l => ({
       ...l,
       short_url: `${BASE_URL}/${l.custom_alias || l.short_code}`,
@@ -236,9 +246,9 @@ api.get('/links', (req, res) => {
 });
 
 // Get single link
-api.get('/links/:id', (req, res) => {
+api.get('/links/:id', async (req, res) => {
   try {
-    const link = getLinkById(parseInt(req.params.id));
+    const link = await getLinkById(parseInt(req.params.id));
     if (!link) return res.status(404).json({ error: 'Link not found.' });
     res.json({ ...link, short_url: `${BASE_URL}/${link.custom_alias || link.short_code}` });
   } catch (err) {
@@ -247,10 +257,10 @@ api.get('/links/:id', (req, res) => {
 });
 
 // Update link
-api.put('/links/:id', (req, res) => {
+api.put('/links/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const existing = getLinkById(id);
+    const existing = await getLinkById(id);
     if (!existing) return res.status(404).json({ error: 'Link not found.' });
 
     const data = { ...req.body };
@@ -263,7 +273,7 @@ api.put('/links/:id', (req, res) => {
       delete data.password;
     }
 
-    const updated = updateLink(id, data);
+    const updated = await updateLink(id, data);
     res.json({ ...updated, short_url: `${BASE_URL}/${updated.custom_alias || updated.short_code}` });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update link.' });
@@ -271,12 +281,12 @@ api.put('/links/:id', (req, res) => {
 });
 
 // Delete link
-api.delete('/links/:id', (req, res) => {
+api.delete('/links/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const existing = getLinkById(id);
+    const existing = await getLinkById(id);
     if (!existing) return res.status(404).json({ error: 'Link not found.' });
-    deleteLink(id);
+    await deleteLink(id);
     res.json({ message: 'Link deleted successfully.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete link.' });
@@ -284,9 +294,9 @@ api.delete('/links/:id', (req, res) => {
 });
 
 // Get clicks for a link
-api.get('/links/:id/clicks', (req, res) => {
+api.get('/links/:id/clicks', async (req, res) => {
   try {
-    const clicks = getClicksForLink(parseInt(req.params.id));
+    const clicks = await getClicksForLink(parseInt(req.params.id));
     res.json(clicks);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch clicks.' });
@@ -294,9 +304,9 @@ api.get('/links/:id/clicks', (req, res) => {
 });
 
 // Analytics summary
-api.get('/analytics/summary', (req, res) => {
+api.get('/analytics/summary', async (req, res) => {
   try {
-    const summary = getAnalyticsSummary();
+    const summary = await getAnalyticsSummary();
     res.json(summary);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch analytics.' });
@@ -304,10 +314,10 @@ api.get('/analytics/summary', (req, res) => {
 });
 
 // Clicks by date
-api.get('/analytics/clicks-by-date', (req, res) => {
+api.get('/analytics/clicks-by-date', async (req, res) => {
   try {
     const { link_id, days } = req.query;
-    const data = getClicksByDate(link_id ? parseInt(link_id) : null, days ? parseInt(days) : 30);
+    const data = await getClicksByDate(link_id ? parseInt(link_id) : null, days ? parseInt(days) : 30);
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch click trends.' });
@@ -323,7 +333,7 @@ app.get('/dashboard', (req, res) => {
 });
 
 // ── Redirect Handler (MUST be last) ────────────────────────────────────────
-app.get('/:code', (req, res) => {
+app.get('/:code', async (req, res) => {
   try {
     const code = req.params.code;
 
@@ -332,7 +342,7 @@ app.get('/:code', (req, res) => {
       return res.status(404).send('Not found');
     }
 
-    const link = getLinkByCode(code);
+    const link = await getLinkByCode(code);
 
     if (!link) {
       return res.status(404).send(errorPage('Link Not Found', 'This short link doesn\'t exist or has been removed.', '🔍'));
@@ -359,12 +369,12 @@ app.get('/:code', (req, res) => {
     }
 
     // Record click
-    recordClick(link.id, {
+    await recordClick(link.id, {
       referrer: req.headers.referer || req.headers.referrer,
       user_agent: req.headers['user-agent'],
       ip: req.ip,
     });
-    incrementClickCount(link.id);
+    await incrementClickCount(link.id);
 
     // Safe redirect — only to http/https
     const target = link.original_url;
@@ -379,7 +389,11 @@ app.get('/:code', (req, res) => {
 });
 
 // ── Start ───────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`⚡ Link Pulse running at ${BASE_URL}`);
-  console.log(`   Admin password: ${ADMIN_PASSWORD}`);
+initDB().then(() => {
+  app.listen(PORT, () => {
+    console.log(`⚡ Link Pulse running at ${BASE_URL}`);
+    console.log(`   Admin password: ${ADMIN_PASSWORD}`);
+  });
+}).catch(err => {
+  console.error('❌ Failed to start server:', err);
 });

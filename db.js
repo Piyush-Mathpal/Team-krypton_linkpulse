@@ -1,63 +1,75 @@
+const { Pool } = require('pg');
 const crypto = require('crypto');
-const path = require('path');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'linkpulse.db');
+// Read Neon PostgreSQL connection string from environment
+const connectionString = process.env.DATABASE_URL;
 
-let db;
-try {
-  const Database = require('better-sqlite3');
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-} catch {
-  const { DatabaseSync } = require('node:sqlite');
-  db = new DatabaseSync(DB_PATH);
-  try {
-    db.exec('PRAGMA journal_mode = WAL;');
-    db.exec('PRAGMA foreign_keys = ON;');
-  } catch {
-    // pragma fallback
-  }
+let pool;
+
+if (connectionString) {
+  const isLocal = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+  pool = new Pool({
+    connectionString,
+    ssl: isLocal ? false : { rejectUnauthorized: false },
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+  });
+} else {
+  console.warn('⚠️  DATABASE_URL environment variable is not set.');
+  console.warn('   Using in-memory PostgreSQL emulator for local development/testing.');
+  console.warn('   For production, set DATABASE_URL=postgresql://user:pass@ep-xyz.neon.tech/neondb?sslmode=require');
+  const { newDb } = require('pg-mem');
+  const mem = newDb({ noAstCoverageCheck: true });
+  const pgAdapter = mem.adapters.createPg();
+  pool = new pgAdapter.Pool();
 }
 
-// ── Schema ──────────────────────────────────────────────────────────────────
-db.exec(`
-  CREATE TABLE IF NOT EXISTS links (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    original_url  TEXT    NOT NULL,
-    short_code    TEXT    UNIQUE NOT NULL,
-    custom_alias  TEXT    UNIQUE,
-    title         TEXT,
-    campaign_tag  TEXT,
-    password_hash TEXT,
-    is_active     INTEGER DEFAULT 1,
-    click_limit   INTEGER,
-    click_count   INTEGER DEFAULT 0,
-    expires_at    TEXT,
-    is_suspicious INTEGER DEFAULT 0,
-    created_at    TEXT    DEFAULT (datetime('now')),
-    updated_at    TEXT    DEFAULT (datetime('now'))
-  );
+// ── Schema Initialization ───────────────────────────────────────────────────
+async function initDB() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS links (
+      id            SERIAL PRIMARY KEY,
+      original_url  TEXT    NOT NULL,
+      short_code    VARCHAR(100) UNIQUE NOT NULL,
+      custom_alias  VARCHAR(100) UNIQUE,
+      title         TEXT,
+      campaign_tag  VARCHAR(100),
+      password_hash TEXT,
+      is_active     INTEGER DEFAULT 1,
+      click_limit   INTEGER,
+      click_count   INTEGER DEFAULT 0,
+      expires_at    TIMESTAMPTZ,
+      is_suspicious INTEGER DEFAULT 0,
+      created_at    TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at    TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
 
-  CREATE TABLE IF NOT EXISTS clicks (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    link_id    INTEGER NOT NULL REFERENCES links(id) ON DELETE CASCADE,
-    clicked_at TEXT    DEFAULT (datetime('now')),
-    referrer   TEXT,
-    user_agent TEXT,
-    ip_hash    TEXT
-  );
+    CREATE TABLE IF NOT EXISTS clicks (
+      id         SERIAL PRIMARY KEY,
+      link_id    INTEGER NOT NULL REFERENCES links(id) ON DELETE CASCADE,
+      clicked_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      referrer   TEXT,
+      user_agent TEXT,
+      ip_hash    VARCHAR(64)
+    );
 
-  CREATE TABLE IF NOT EXISTS settings (
-    key   TEXT PRIMARY KEY,
-    value TEXT
-  );
+    CREATE TABLE IF NOT EXISTS settings (
+      key   VARCHAR(255) PRIMARY KEY,
+      value TEXT
+    );
 
-  CREATE INDEX IF NOT EXISTS idx_links_short_code   ON links(short_code);
-  CREATE INDEX IF NOT EXISTS idx_links_custom_alias ON links(custom_alias);
-  CREATE INDEX IF NOT EXISTS idx_clicks_link_id     ON clicks(link_id);
-  CREATE INDEX IF NOT EXISTS idx_clicks_clicked_at  ON clicks(clicked_at);
-`);
+    CREATE INDEX IF NOT EXISTS idx_links_short_code   ON links(short_code);
+    CREATE INDEX IF NOT EXISTS idx_links_custom_alias ON links(custom_alias);
+    CREATE INDEX IF NOT EXISTS idx_clicks_link_id     ON clicks(link_id);
+    CREATE INDEX IF NOT EXISTS idx_clicks_clicked_at  ON clicks(clicked_at);
+  `);
+}
+
+// Trigger table creation on load
+const initPromise = initDB().catch((err) => {
+  console.error('❌ Failed to initialize database tables:', err.message);
+});
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -66,47 +78,61 @@ function hashIP(ip) {
   return crypto.createHash('sha256').update(ip + (process.env.SESSION_SECRET || 'salt')).digest('hex').slice(0, 16);
 }
 
-function createLink({ original_url, short_code, custom_alias, title, campaign_tag, password_hash, click_limit, expires_at }) {
-  const stmt = db.prepare(`
-    INSERT INTO links (original_url, short_code, custom_alias, title, campaign_tag, password_hash, click_limit, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const result = stmt.run(
-    original_url,
-    short_code,
-    custom_alias || null,
-    title || null,
-    campaign_tag || null,
-    password_hash || null,
-    click_limit || null,
-    expires_at || null
+async function createLink({ original_url, short_code, custom_alias, title, campaign_tag, password_hash, click_limit, expires_at }) {
+  await initPromise;
+  const res = await pool.query(
+    `INSERT INTO links (original_url, short_code, custom_alias, title, campaign_tag, password_hash, click_limit, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING *`,
+    [
+      original_url,
+      short_code,
+      custom_alias || null,
+      title || null,
+      campaign_tag || null,
+      password_hash || null,
+      click_limit ? parseInt(click_limit) : null,
+      expires_at && String(expires_at).trim() !== '' ? new Date(expires_at) : null,
+    ]
   );
-  const insertId = Number(result.lastInsertRowid);
-  return db.prepare('SELECT * FROM links WHERE id = ?').get(insertId);
+  return res.rows[0];
 }
 
-function getLinkByCode(code) {
-  return db.prepare('SELECT * FROM links WHERE short_code = ? OR custom_alias = ?').get(code, code);
+async function getLinkByCode(code) {
+  await initPromise;
+  const res = await pool.query(
+    'SELECT * FROM links WHERE short_code = $1 OR custom_alias = $1',
+    [code]
+  );
+  return res.rows[0] || null;
 }
 
-function getLinkById(id) {
-  return db.prepare('SELECT * FROM links WHERE id = ?').get(Number(id));
+async function getLinkById(id) {
+  await initPromise;
+  const res = await pool.query('SELECT * FROM links WHERE id = $1', [Number(id)]);
+  return res.rows[0] || null;
 }
 
-function getAllLinks(search, status, tag) {
+async function getAllLinks(search, status, tag) {
+  await initPromise;
   let sql = 'SELECT * FROM links WHERE 1=1';
   const params = [];
+  let paramIndex = 1;
 
   if (search) {
-    sql += ' AND (original_url LIKE ? OR short_code LIKE ? OR title LIKE ? OR custom_alias LIKE ?)';
-    const s = `%${search}%`;
-    params.push(s, s, s, s);
+    sql += ` AND (original_url ILIKE $${paramIndex} OR short_code ILIKE $${paramIndex} OR title ILIKE $${paramIndex} OR custom_alias ILIKE $${paramIndex})`;
+    params.push(`%${search}%`);
+    paramIndex++;
   }
 
   if (status === 'active') {
-    sql += " AND is_active = 1 AND (expires_at IS NULL OR expires_at > datetime('now'))";
+    sql += ` AND is_active = 1 AND (expires_at IS NULL OR expires_at > $${paramIndex})`;
+    params.push(new Date());
+    paramIndex++;
   } else if (status === 'expired') {
-    sql += " AND expires_at IS NOT NULL AND expires_at <= datetime('now')";
+    sql += ` AND expires_at IS NOT NULL AND expires_at <= $${paramIndex}`;
+    params.push(new Date());
+    paramIndex++;
   } else if (status === 'disabled') {
     sql += ' AND is_active = 0';
   } else if (status === 'suspicious') {
@@ -114,92 +140,148 @@ function getAllLinks(search, status, tag) {
   }
 
   if (tag) {
-    sql += ' AND campaign_tag = ?';
+    sql += ` AND campaign_tag = $${paramIndex}`;
     params.push(tag);
+    paramIndex++;
   }
 
   sql += ' ORDER BY created_at DESC';
-  return db.prepare(sql).all(...params);
+  const res = await pool.query(sql, params);
+  return res.rows;
 }
 
-function updateLink(id, data) {
+async function updateLink(id, data) {
+  await initPromise;
   const fields = [];
   const params = [];
+  let paramIndex = 1;
+
   const allowed = ['title', 'campaign_tag', 'is_active', 'click_limit', 'expires_at', 'password_hash', 'original_url', 'custom_alias'];
 
   for (const key of allowed) {
     if (data[key] !== undefined) {
-      fields.push(`${key} = ?`);
-      params.push(data[key]);
+      let val = data[key];
+      if (key === 'expires_at') {
+        val = val && String(val).trim() !== '' ? new Date(val) : null;
+      }
+      fields.push(`${key} = $${paramIndex}`);
+      params.push(val);
+      paramIndex++;
     }
   }
 
   if (fields.length === 0) return getLinkById(id);
 
-  fields.push("updated_at = datetime('now')");
+  fields.push('updated_at = CURRENT_TIMESTAMP');
   params.push(Number(id));
 
-  db.prepare(`UPDATE links SET ${fields.join(', ')} WHERE id = ?`).run(...params);
-  return getLinkById(id);
+  const res = await pool.query(
+    `UPDATE links SET ${fields.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+    params
+  );
+  return res.rows[0];
 }
 
-function deleteLink(id) {
-  return db.prepare('DELETE FROM links WHERE id = ?').run(Number(id));
+async function deleteLink(id) {
+  await initPromise;
+  const res = await pool.query('DELETE FROM links WHERE id = $1', [Number(id)]);
+  return res.rowCount > 0;
 }
 
-function recordClick(linkId, { referrer, user_agent, ip }) {
-  const stmt = db.prepare('INSERT INTO clicks (link_id, referrer, user_agent, ip_hash) VALUES (?, ?, ?, ?)');
-  stmt.run(Number(linkId), referrer || null, user_agent || null, hashIP(ip));
+async function recordClick(linkId, { referrer, user_agent, ip }) {
+  await initPromise;
+  await pool.query(
+    'INSERT INTO clicks (link_id, referrer, user_agent, ip_hash) VALUES ($1, $2, $3, $4)',
+    [Number(linkId), referrer || null, user_agent || null, hashIP(ip)]
+  );
 }
 
-function incrementClickCount(linkId) {
-  db.prepare('UPDATE links SET click_count = click_count + 1 WHERE id = ?').run(Number(linkId));
+async function incrementClickCount(linkId) {
+  await initPromise;
+  await pool.query(
+    'UPDATE links SET click_count = click_count + 1 WHERE id = $1',
+    [Number(linkId)]
+  );
 }
 
-function getClicksForLink(linkId) {
-  return db.prepare('SELECT id, clicked_at, referrer, user_agent FROM clicks WHERE link_id = ? ORDER BY clicked_at DESC LIMIT 500').all(Number(linkId));
+async function getClicksForLink(linkId) {
+  await initPromise;
+  const res = await pool.query(
+    'SELECT id, clicked_at, referrer, user_agent FROM clicks WHERE link_id = $1 ORDER BY clicked_at DESC LIMIT 500',
+    [Number(linkId)]
+  );
+  return res.rows;
 }
 
-function getAnalyticsSummary() {
-  const totalLinks = Number(db.prepare('SELECT COUNT(*) as count FROM links').get().count);
-  const totalClicks = Number(db.prepare('SELECT COALESCE(SUM(click_count), 0) as count FROM links').get().count);
-  const activeLinks = Number(db.prepare("SELECT COUNT(*) as count FROM links WHERE is_active = 1 AND (expires_at IS NULL OR expires_at > datetime('now'))").get().count);
-  const suspiciousLinks = Number(db.prepare('SELECT COUNT(*) as count FROM links WHERE is_suspicious = 1').get().count);
-  const topLinks = db.prepare('SELECT id, short_code, custom_alias, original_url, title, click_count FROM links ORDER BY click_count DESC LIMIT 5').all();
+async function getAnalyticsSummary() {
+  await initPromise;
+  const now = new Date();
+  const totalLinksRes = await pool.query('SELECT COUNT(*)::int as count FROM links');
+  const totalClicksRes = await pool.query('SELECT COALESCE(SUM(click_count), 0)::int as count FROM links');
+  const activeLinksRes = await pool.query(
+    'SELECT COUNT(*)::int as count FROM links WHERE is_active = 1 AND (expires_at IS NULL OR expires_at > $1)',
+    [now]
+  );
+  const suspiciousLinksRes = await pool.query('SELECT COUNT(*)::int as count FROM links WHERE is_suspicious = 1');
+  const topLinksRes = await pool.query('SELECT id, short_code, custom_alias, original_url, title, click_count FROM links ORDER BY click_count DESC LIMIT 5');
 
-  return { totalLinks, totalClicks, activeLinks, suspiciousLinks, topLinks };
+  return {
+    totalLinks: Number(totalLinksRes.rows[0]?.count || 0),
+    totalClicks: Number(totalClicksRes.rows[0]?.count || 0),
+    activeLinks: Number(activeLinksRes.rows[0]?.count || 0),
+    suspiciousLinks: Number(suspiciousLinksRes.rows[0]?.count || 0),
+    topLinks: topLinksRes.rows,
+  };
 }
 
-function getClicksByDate(linkId, days = 30) {
-  let sql, params;
+async function getClicksByDate(linkId, days = 30) {
+  await initPromise;
+  const cutoff = new Date(Date.now() - (Number(days) || 30) * 24 * 60 * 60 * 1000);
+  let res;
 
   if (linkId) {
-    sql = `SELECT DATE(clicked_at) as date, COUNT(*) as count 
-           FROM clicks 
-           WHERE link_id = ? AND clicked_at >= datetime('now', ?) 
-           GROUP BY DATE(clicked_at) 
-           ORDER BY date ASC`;
-    params = [Number(linkId), `-${days} days`];
+    res = await pool.query(
+      `SELECT CAST(clicked_at AS DATE) as date, COUNT(*)::int as count
+       FROM clicks
+       WHERE link_id = $1 AND clicked_at >= $2
+       GROUP BY CAST(clicked_at AS DATE)
+       ORDER BY date ASC`,
+      [Number(linkId), cutoff]
+    );
   } else {
-    sql = `SELECT DATE(clicked_at) as date, COUNT(*) as count 
-           FROM clicks 
-           WHERE clicked_at >= datetime('now', ?) 
-           GROUP BY DATE(clicked_at) 
-           ORDER BY date ASC`;
-    params = [`-${days} days`];
+    res = await pool.query(
+      `SELECT CAST(clicked_at AS DATE) as date, COUNT(*)::int as count
+       FROM clicks
+       WHERE clicked_at >= $1
+       GROUP BY CAST(clicked_at AS DATE)
+       ORDER BY date ASC`,
+      [cutoff]
+    );
   }
 
-  const rows = db.prepare(sql).all(...params);
-  return rows.map(r => ({ date: r.date, count: Number(r.count) }));
+  return res.rows.map((r) => {
+    let dateStr;
+    if (r.date instanceof Date) {
+      dateStr = r.date.toISOString().split('T')[0];
+    } else {
+      dateStr = String(r.date).split('T')[0];
+    }
+    return { date: dateStr, count: Number(r.count) };
+  });
 }
 
-function reportSuspicious(linkId) {
-  db.prepare("UPDATE links SET is_suspicious = 1, updated_at = datetime('now') WHERE id = ?").run(Number(linkId));
-  return getLinkById(linkId);
+async function reportSuspicious(linkId) {
+  await initPromise;
+  const res = await pool.query(
+    'UPDATE links SET is_suspicious = 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
+    [Number(linkId)]
+  );
+  return res.rows[0];
 }
 
 module.exports = {
-  db,
+  pool,
+  initDB,
   createLink,
   getLinkByCode,
   getLinkById,

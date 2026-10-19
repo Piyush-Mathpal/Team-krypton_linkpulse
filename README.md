@@ -1,22 +1,22 @@
-<<<<<<< HEAD
 # ⚡ LINK PULSE — URL Shortener & Analytics Platform
 
 > Built by **Team Krypton** for **Innovista Round 2**
 >
-> A high-performance, modern URL shortener and real-time analytics suite with QR generation, link privacy controls, password protection, and campaign tracking.
+> A high-performance, modern URL shortener and real-time analytics suite powered by **Neon Serverless PostgreSQL**, featuring instant short-code generation, downloadable QR codes, password protection, expiration controls, click limits, and campaign analytics.
 
 ---
 
 ## 📖 Overview
 
-**LINK PULSE** is a full-featured URL management platform engineered for speed, privacy, and actionable insights. Whether you are launching a marketing campaign, sharing resources with colleagues, or protecting sensitive content, Link Pulse gives you total control over your links.
+**LINK PULSE** is an enterprise-grade URL management platform engineered for speed, privacy, and actionable insights. Backed by **Neon PostgreSQL** with connection pooling and SSL, Link Pulse provides low-latency redirects and comprehensive analytics without the risks of ephemeral local file storage.
 
 ### 🌟 Key Highlights
-- **Instant Shortening**: Nanoid-powered collision-resistant 7-character short codes.
-- **Custom Aliases**: Brand your links with custom memorable slugs.
+- **Instant Shortening**: Nanoid-powered collision-resistant short codes.
+- **Custom Aliases & Tags**: Brand links with custom slugs and organize them by campaign.
+- **Neon PostgreSQL Persistence**: High-reliability serverless PostgreSQL database with automated table and index creation on startup.
 - **Real-Time Analytics**: Built with Chart.js to visualize click trends, referrer sources, and timestamps.
 - **Privacy & Security First**: IP addresses are SHA-256 hashed with salt before logging; zero plaintext passwords or sensitive tokens stored.
-- **Security Features**: Built-in rate limiting, safe HTTP/HTTPS redirect validation, password-protected links with bcrypt verification, and community abuse reporting.
+- **Security Features**: Rate limiting, safe HTTP/HTTPS redirect validation, password-protected links with bcrypt verification, and community abuse reporting.
 - **Link Controls**: Expiration dates, one-time or custom click limits, and instant enable/disable toggles.
 - **QR Code Engine**: Downloadable, high-resolution QR codes generated on the fly for every shortened link.
 
@@ -29,7 +29,7 @@
 | **Frontend** | Vanilla Semantic HTML5, Modular CSS3 (Custom Design System & Glassmorphism), Vanilla ES6+ JavaScript |
 | **Charts & Visuals** | Chart.js 4.x via CDN |
 | **Backend** | Node.js, Express.js |
-| **Database** | SQLite3 via `better-sqlite3` (with WAL mode & indexed queries) |
+| **Database** | **Neon PostgreSQL** via `pg` (with connection pooling, SSL, and automated schema migration) |
 | **Security & Utilities** | `bcryptjs`, `helmet`, `cors`, `express-rate-limit`, `morgan`, `qrcode`, `nanoid` (v3) |
 
 ---
@@ -37,12 +37,13 @@
 ## 📁 Project Structure
 
 ```
-├── .env.example              # Environment variable template
+├── .env.example              # Environment variable template with DATABASE_URL
 ├── .env                      # Local environment configuration (gitignored)
-├── .gitignore                # Comprehensive exclusions
-├── package.json              # Project dependencies and npm scripts
-├── db.js                     # SQLite schema, queries, indexing, IP hashing
-├── server.js                 # Express application, routes, redirects, security
+├── .gitignore                # Excludes secrets, node_modules, and local files
+├── package.json              # Project dependencies and npm scripts (start, dev, test)
+├── db.js                     # PostgreSQL connection pool, schema init & parameterized queries
+├── server.js                 # Express server, route security, rate limiter, redirects
+├── test-routes.js            # Automated 23-point integration test suite
 ├── public/                   # Frontend assets
 │   ├── index.html            # Premium SaaS landing page
 │   ├── dashboard.html        # Analytics & link management workspace
@@ -81,15 +82,22 @@
    ```bash
    cp .env.example .env
    ```
-   Edit `.env` as appropriate:
+   Edit `.env` to supply your Neon PostgreSQL connection string:
    ```ini
    PORT=3000
    BASE_URL=http://localhost:3000
    ADMIN_PASSWORD=admin123
    SESSION_SECRET=super_secret_session_salt
+   DATABASE_URL=postgresql://username:password@ep-sample.us-east-2.aws.neon.tech/neondb?sslmode=require
+   ```
+   *(Note: If `DATABASE_URL` is omitted in local dev, Link Pulse automatically provides an in-memory PostgreSQL emulator so offline development and tests run seamlessly).*
+
+4. **Run the Automated Test Suite:**
+   ```bash
+   npm test
    ```
 
-4. **Run the server:**
+5. **Start the server:**
    - **Production Mode**:
      ```bash
      npm start
@@ -99,9 +107,9 @@
      npm run dev
      ```
 
-5. **Open in Browser:**
+6. **Open in Browser:**
    - Landing Page: [http://localhost:3000](http://localhost:3000)
-   - Admin Dashboard: [http://localhost:3000/dashboard](http://localhost:3000/dashboard) (Default password: `admin123`)
+   - Admin Dashboard: [http://localhost:3000/dashboard](http://localhost:3000/dashboard) *(Default password: `admin123`)*
 
 ---
 
@@ -113,14 +121,14 @@
 | `BASE_URL` | `http://localhost:3000` | Base URL used to formulate shortened redirect links |
 | `ADMIN_PASSWORD` | `changeme` | Secret token used to access admin dashboard & link management |
 | `SESSION_SECRET` | `changeme_session_secret` | Salt key used to securely hash incoming IP addresses |
-| `DB_PATH` | `./linkpulse.db` | Path to persistent SQLite database file (Render persistent disk) |
+| `DATABASE_URL` | `postgresql://...` | Connection string for Neon PostgreSQL database with SSL |
 
 ---
 
 ## 📊 Features & Functional Walkthrough
 
 ### 1. Landing Page
-- Instant URL shortening directly from the hero section.
+- Instant URL shortening directly from the hero section without prior authentication.
 - Automatic link copying to clipboard with live toast alerts.
 - Pop-up QR Code generation with single-click PNG download.
 - Mobile-first responsive navigation with hamburger drawer and smooth scrolling.
@@ -128,8 +136,8 @@
 
 ### 2. Admin & Link Manager Dashboard
 - **Protected Workspace**: Authenticated via `x-admin-token` / admin password.
-- **Overview Metrics**: Total links, total click volume, active links, and suspicious link tallies.
-- **Interactive Chart**: 30-day click trends plotted with smooth gradient spline fills.
+- **Overview Metrics**: Real-time queries for total links, total click volume, active links, and suspicious link tallies.
+- **Interactive Chart**: 30-day click trends plotted with smooth gradient spline fills via Chart.js.
 - **Link Manager Table**:
   - Live search by title, custom alias, or target URL (debounced).
   - Filter by link status (`Active`, `Expired`, `Disabled`, `Suspicious`) and campaign tag.
@@ -146,28 +154,33 @@
 
 ---
 
-## 🌐 Live Production Deployment
+## 🌐 Live Production Deployment (Render + Neon)
 
-### Recommended Deployment on Render.com
+With Neon PostgreSQL, live deployment on Render is effortless and stateless:
 
-Because Link Pulse uses Express.js with SQLite persistence, it is designed for single-container hosting with persistent disk storage:
+1. **Provision Neon Database**:
+   - Create a project on [Neon.tech](https://neon.tech).
+   - Copy your connection string: `postgresql://user:password@ep-xyz.us-east-2.aws.neon.tech/neondb?sslmode=require`.
 
-1. **Create a Web Service on Render:**
-   - Repository: Connect your GitHub repository (`teamname-projectname`).
+2. **Deploy on Render**:
+   - Create a new **Web Service** on Render.
+   - Connect your GitHub repository (`teamname-projectname`).
    - Environment: `Node`
    - Build Command: `npm install`
    - Start Command: `node server.js`
-2. **Add Persistent Disk (Render Disks):**
-   - Mount Path: `/var/data`
-   - Set environment variable: `DB_PATH=/var/data/linkpulse.db`
-3. **Set Environment Variables in Render Dashboard:**
-   - `BASE_URL`: `https://your-service-name.onrender.com`
-   - `ADMIN_PASSWORD`: A strong random admin password
-   - `SESSION_SECRET`: A 32+ character random hex string
-   - `PORT`: `10000` (Render default)
-4. **Deploy:**
-   - Trigger manual deploy or push to main branch.
-   - Verify health at `https://your-service-name.onrender.com`.
+
+3. **Set Environment Variables in Render**:
+   | Key | Value |
+   |---|---|
+   | `DATABASE_URL` | `postgresql://user:password@ep-xyz.us-east-2.aws.neon.tech/neondb?sslmode=require` |
+   | `BASE_URL` | `https://your-service-name.onrender.com` |
+   | `ADMIN_PASSWORD` | `<your-secure-admin-password>` |
+   | `SESSION_SECRET` | `<random-session-secret-salt>` |
+   | `PORT` | `10000` |
+
+4. **Verify**:
+   - Tables and indexes are created automatically on service launch.
+   - Test shortening, redirection, dashboard, and persistence.
 
 ---
 
@@ -176,7 +189,3 @@ Because Link Pulse uses Express.js with SQLite persistence, it is designed for s
 - **Team Name**: Team Krypton
 - **Project**: Link Pulse
 - **License**: MIT
-=======
-# Team-krypton_linkpulse
-Link Pulse — A modern URL shortener and analytics platform featuring custom short links, QR code generation, click tracking, link management, expiration controls, and real-time performance insights. Built with HTML, CSS, JavaScript, Node.js, Express.js, SQLite, and Chart.js for Innovista Hackathon by Team Krypton.
->>>>>>> 7dd4fdd5d9e5c1b9b613e24c5b36e2f8e1f67598

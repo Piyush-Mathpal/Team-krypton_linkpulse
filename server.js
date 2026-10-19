@@ -29,7 +29,12 @@ const {
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === 'production' ? null : 'admin123');
+
+if (process.env.NODE_ENV === 'production' && !ADMIN_PASSWORD) {
+  console.error('❌ FATAL: ADMIN_PASSWORD environment variable must be set in production.');
+  process.exit(1);
+}
 
 // ── Middleware ───────────────────────────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
@@ -391,9 +396,9 @@ app.get('/:code', async (req, res) => {
 // ── Start ───────────────────────────────────────────────────────────────────
 initDB().then(() => {
   app.listen(PORT, () => {
-    console.log(`⚡ Link Pulse running at ${BASE_URL}`);
-    console.log(`   Admin password: ${ADMIN_PASSWORD}`);
+    console.log(`⚡ Link Pulse running on port ${PORT} (${BASE_URL})`);
   });
 }).catch(err => {
-  console.error('❌ Failed to start server:', err);
+  console.error('❌ Database initialization failed. Server will not start:', err.message || err);
+  process.exit(1);
 });

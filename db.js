@@ -11,11 +11,14 @@ if (connectionString) {
   pool = new Pool({
     connectionString,
     ssl: isLocal ? false : { rejectUnauthorized: false },
-    max: 20,
+    max: 10,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
   });
 } else {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('DATABASE_URL environment variable is required in production.');
+  }
   console.warn('⚠️  DATABASE_URL environment variable is not set.');
   console.warn('   Using in-memory PostgreSQL emulator for local development/testing.');
   console.warn('   For production, set DATABASE_URL=postgresql://user:pass@ep-xyz.neon.tech/neondb?sslmode=require');
@@ -25,51 +28,88 @@ if (connectionString) {
   pool = new pgAdapter.Pool();
 }
 
-// ── Schema Initialization ───────────────────────────────────────────────────
+// ── Schema Initialization (Idempotent, Safe for Neon PostgreSQL) ────────────
+let initPromise = null;
+
 async function initDB() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS links (
-      id            SERIAL PRIMARY KEY,
-      original_url  TEXT    NOT NULL,
-      short_code    VARCHAR(100) UNIQUE NOT NULL,
-      custom_alias  VARCHAR(100) UNIQUE,
-      title         TEXT,
-      campaign_tag  VARCHAR(100),
-      password_hash TEXT,
-      is_active     INTEGER DEFAULT 1,
-      click_limit   INTEGER,
-      click_count   INTEGER DEFAULT 0,
-      expires_at    TIMESTAMPTZ,
-      is_suspicious INTEGER DEFAULT 0,
-      created_at    TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-      updated_at    TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-    );
+  if (initPromise) return initPromise;
 
-    CREATE TABLE IF NOT EXISTS clicks (
-      id         SERIAL PRIMARY KEY,
-      link_id    INTEGER NOT NULL REFERENCES links(id) ON DELETE CASCADE,
-      clicked_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-      referrer   TEXT,
-      user_agent TEXT,
-      ip_hash    VARCHAR(64)
-    );
+  initPromise = (async () => {
+    const client = await pool.connect();
+    const isCloud = connectionString && !connectionString.includes('localhost') && !connectionString.includes('127.0.0.1');
 
-    CREATE TABLE IF NOT EXISTS settings (
-      key   VARCHAR(255) PRIMARY KEY,
-      value TEXT
-    );
+    try {
+      if (isCloud) {
+        // Prevent concurrent initialization race conditions across multiple instances
+        await client.query('SELECT pg_advisory_lock(84729104)');
+      }
 
-    CREATE INDEX IF NOT EXISTS idx_links_short_code   ON links(short_code);
-    CREATE INDEX IF NOT EXISTS idx_links_custom_alias ON links(custom_alias);
-    CREATE INDEX IF NOT EXISTS idx_clicks_link_id     ON clicks(link_id);
-    CREATE INDEX IF NOT EXISTS idx_clicks_clicked_at  ON clicks(clicked_at);
-  `);
+      const createTableSafe = async (sql) => {
+        try {
+          await client.query(sql);
+        } catch (err) {
+          // Handle PostgreSQL 23505 pg_type race condition when table/type exists concurrently
+          if (err.code === '23505' && (err.constraint === 'pg_type_typname_nsp_index' || (err.message && err.message.includes('pg_type')))) {
+            return;
+          }
+          throw err;
+        }
+      };
+
+      try {
+        await createTableSafe(`
+          CREATE TABLE IF NOT EXISTS links (
+            id            SERIAL PRIMARY KEY,
+            original_url  TEXT    NOT NULL,
+            short_code    VARCHAR(100) UNIQUE NOT NULL,
+            custom_alias  VARCHAR(100) UNIQUE,
+            title         TEXT,
+            campaign_tag  VARCHAR(100),
+            password_hash TEXT,
+            is_active     INTEGER DEFAULT 1,
+            click_limit   INTEGER,
+            click_count   INTEGER DEFAULT 0,
+            expires_at    TIMESTAMPTZ,
+            is_suspicious INTEGER DEFAULT 0,
+            created_at    TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            updated_at    TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+
+        await createTableSafe(`
+          CREATE TABLE IF NOT EXISTS clicks (
+            id         SERIAL PRIMARY KEY,
+            link_id    INTEGER NOT NULL REFERENCES links(id) ON DELETE CASCADE,
+            clicked_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            referrer   TEXT,
+            user_agent TEXT,
+            ip_hash    VARCHAR(64)
+          )
+        `);
+
+        await createTableSafe(`
+          CREATE TABLE IF NOT EXISTS settings (
+            key   VARCHAR(255) PRIMARY KEY,
+            value TEXT
+          )
+        `);
+
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_links_short_code ON links(short_code)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_links_custom_alias ON links(custom_alias)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_clicks_link_id ON clicks(link_id)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_clicks_clicked_at ON clicks(clicked_at)`);
+      } finally {
+        if (isCloud) {
+          await client.query('SELECT pg_advisory_unlock(84729104)').catch(() => {});
+        }
+      }
+    } finally {
+      client.release();
+    }
+  })();
+
+  return initPromise;
 }
-
-// Trigger table creation on load
-const initPromise = initDB().catch((err) => {
-  console.error('❌ Failed to initialize database tables:', err.message);
-});
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -79,7 +119,7 @@ function hashIP(ip) {
 }
 
 async function createLink({ original_url, short_code, custom_alias, title, campaign_tag, password_hash, click_limit, expires_at }) {
-  await initPromise;
+  await initDB();
   const res = await pool.query(
     `INSERT INTO links (original_url, short_code, custom_alias, title, campaign_tag, password_hash, click_limit, expires_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -99,7 +139,7 @@ async function createLink({ original_url, short_code, custom_alias, title, campa
 }
 
 async function getLinkByCode(code) {
-  await initPromise;
+  await initDB();
   const res = await pool.query(
     'SELECT * FROM links WHERE short_code = $1 OR custom_alias = $1',
     [code]
@@ -108,13 +148,13 @@ async function getLinkByCode(code) {
 }
 
 async function getLinkById(id) {
-  await initPromise;
+  await initDB();
   const res = await pool.query('SELECT * FROM links WHERE id = $1', [Number(id)]);
   return res.rows[0] || null;
 }
 
 async function getAllLinks(search, status, tag) {
-  await initPromise;
+  await initDB();
   let sql = 'SELECT * FROM links WHERE 1=1';
   const params = [];
   let paramIndex = 1;
@@ -151,7 +191,7 @@ async function getAllLinks(search, status, tag) {
 }
 
 async function updateLink(id, data) {
-  await initPromise;
+  await initDB();
   const fields = [];
   const params = [];
   let paramIndex = 1;
@@ -183,13 +223,13 @@ async function updateLink(id, data) {
 }
 
 async function deleteLink(id) {
-  await initPromise;
+  await initDB();
   const res = await pool.query('DELETE FROM links WHERE id = $1', [Number(id)]);
   return res.rowCount > 0;
 }
 
 async function recordClick(linkId, { referrer, user_agent, ip }) {
-  await initPromise;
+  await initDB();
   await pool.query(
     'INSERT INTO clicks (link_id, referrer, user_agent, ip_hash) VALUES ($1, $2, $3, $4)',
     [Number(linkId), referrer || null, user_agent || null, hashIP(ip)]
@@ -197,7 +237,7 @@ async function recordClick(linkId, { referrer, user_agent, ip }) {
 }
 
 async function incrementClickCount(linkId) {
-  await initPromise;
+  await initDB();
   await pool.query(
     'UPDATE links SET click_count = click_count + 1 WHERE id = $1',
     [Number(linkId)]
@@ -205,7 +245,7 @@ async function incrementClickCount(linkId) {
 }
 
 async function getClicksForLink(linkId) {
-  await initPromise;
+  await initDB();
   const res = await pool.query(
     'SELECT id, clicked_at, referrer, user_agent FROM clicks WHERE link_id = $1 ORDER BY clicked_at DESC LIMIT 500',
     [Number(linkId)]
@@ -214,7 +254,7 @@ async function getClicksForLink(linkId) {
 }
 
 async function getAnalyticsSummary() {
-  await initPromise;
+  await initDB();
   const now = new Date();
   const totalLinksRes = await pool.query('SELECT COUNT(*)::int as count FROM links');
   const totalClicksRes = await pool.query('SELECT COALESCE(SUM(click_count), 0)::int as count FROM links');
@@ -235,7 +275,7 @@ async function getAnalyticsSummary() {
 }
 
 async function getClicksByDate(linkId, days = 30) {
-  await initPromise;
+  await initDB();
   const cutoff = new Date(Date.now() - (Number(days) || 30) * 24 * 60 * 60 * 1000);
   let res;
 
@@ -271,7 +311,7 @@ async function getClicksByDate(linkId, days = 30) {
 }
 
 async function reportSuspicious(linkId) {
-  await initPromise;
+  await initDB();
   const res = await pool.query(
     'UPDATE links SET is_suspicious = 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
     [Number(linkId)]

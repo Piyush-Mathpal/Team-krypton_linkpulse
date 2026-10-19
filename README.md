@@ -171,10 +171,10 @@ With Neon PostgreSQL, live deployment on Render is effortless and stateless:
 3. **Set Environment Variables in Render**:
    | Key | Value |
    |---|---|
-   | `DATABASE_URL` | `postgresql://neondb_owner:npg_pE4rYL1ilGcB@ep-hidden-salad-b4rh8llo-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require` |
+   | `DATABASE_URL` | `postgresql://neondb_owner:npg_pE4rYL1ilGcB@ep-hidden-salad-b4rhb?sslmode=require&channel_binding=require` |
    | `BASE_URL` | `https://team-krypton-linkpulse.onrender.com` |
    | `ADMIN_PASSWORD` | `<admin@123>` |
-   | `SESSION_SECRET` | `<397c2b5dac74ce3adedc33e465c4c6c3469d5bd571b2e99d322778c3be2b160b>` |
+   | `SESSION_SECRET` | `<397c2b5dac74ce3adedc33e465c4c6c3469d5bd571b2322778b>` |
    | `DB_PATH` | `/var/data/linkpulse.db` |
 
 4. **Verify**:
